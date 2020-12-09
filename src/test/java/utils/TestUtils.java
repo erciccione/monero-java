@@ -8,8 +8,10 @@ import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.math.BigInteger;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.logging.LogManager;
 import java.util.logging.Logger;
@@ -47,6 +49,7 @@ public class TestUtils {
   
   // monero wallet rpc configuration (change per your configuration)
   public static final int WALLET_RPC_PORT_START = 38084; // test wallet executables will bind to consecutive ports after these
+  public static boolean WALLET_RPC_ZMQ_ENABLED = false;
   public static final int WALLET_RPC_ZMQ_PORT_START = 58083;
   public static final int WALLET_RPC_ZMQ_BIND_PORT_START = 48083;  // TODO: zmq bind port necessary?
   public static final String WALLET_RPC_USERNAME = "rpc_user";
@@ -107,7 +110,7 @@ public class TestUtils {
     if (walletRpc == null) {
       
       // construct wallet rpc instance with daemon connection
-      MoneroRpcConnection rpc = new MoneroRpcConnection(WALLET_RPC_URI, WALLET_RPC_USERNAME, WALLET_RPC_PASSWORD, WALLET_RPC_ZMQ_URI);
+      MoneroRpcConnection rpc = new MoneroRpcConnection(WALLET_RPC_URI, WALLET_RPC_USERNAME, WALLET_RPC_PASSWORD, WALLET_RPC_ZMQ_ENABLED ? WALLET_RPC_ZMQ_URI : null);
       walletRpc = new MoneroWalletRpc(rpc);
     }
     
@@ -149,7 +152,7 @@ public class TestUtils {
     while (WALLET_PORT_OFFSETS.values().contains(portOffset)) portOffset++;
     
     // create client with internal monero-wallet-rpc process
-    MoneroWalletRpc wallet = new MoneroWalletRpc(Arrays.asList(
+    List<String> cmd = new ArrayList<String>(Arrays.asList(
         TestUtils.WALLET_RPC_LOCAL_EXEC_PATH,
         "--" + TestUtils.NETWORK_TYPE.toString().toLowerCase(),
         "--daemon-address", TestUtils.DAEMON_RPC_URI,
@@ -157,11 +160,18 @@ public class TestUtils {
         "--rpc-bind-port", "" + (TestUtils.WALLET_RPC_PORT_START + portOffset),
         "--rpc-login", TestUtils.WALLET_RPC_USERNAME + ":" + TestUtils.WALLET_RPC_PASSWORD,
         "--wallet-dir", TestUtils.WALLET_RPC_LOCAL_WALLET_DIR,
-        "--rpc-access-control-origins", TestUtils.WALLET_RPC_ACCESS_CONTROL_ORIGINS,
-        "--zmq-rpc-bind-port", "" + (TestUtils.WALLET_RPC_ZMQ_BIND_PORT_START + portOffset),
-        "--zmq-pub", "tcp://" + WALLET_RPC_ZMQ_DOMAIN + ":" + (TestUtils.WALLET_RPC_ZMQ_PORT_START + portOffset)));
+        "--rpc-access-control-origins", TestUtils.WALLET_RPC_ACCESS_CONTROL_ORIGINS));
+    
+    // start with zmq if enabled
+    if (WALLET_RPC_ZMQ_ENABLED) {
+      cmd.addAll(Arrays.asList("--zmq-rpc-bind-port", "" + (TestUtils.WALLET_RPC_ZMQ_BIND_PORT_START + portOffset)));
+      cmd.addAll(Arrays.asList("--zmq-pub", "tcp://" + WALLET_RPC_ZMQ_DOMAIN + ":" + (TestUtils.WALLET_RPC_ZMQ_PORT_START + portOffset)));
+    } else {
+      cmd.add("--no-zmq");
+    }
     
     // register wallet with port offset
+    MoneroWalletRpc wallet = new MoneroWalletRpc(cmd);
     WALLET_PORT_OFFSETS.put(wallet, portOffset);
     return wallet;
   }

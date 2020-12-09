@@ -4422,6 +4422,7 @@ public abstract class TestMoneroWalletCommon {
       String txHash = tx.getHash();
       sender.getTx(txHash);
       if (senderListener.getOutputsSpent().isEmpty()) System.out.println("WARNING: no notification on send");
+      sender.save();
       
       final int REFRESH_RATE = receiver instanceof MoneroWalletRpc ? 20 : 10; // TODO: wallet rpc default refresh rate is 20 seconds, bump it up to 10?
       
@@ -4450,6 +4451,7 @@ public abstract class TestMoneroWalletCommon {
     testReceivedOutputNotificationsWithUnlockHeight(13l);
   }
   
+  // TODO: modify test so unconfirmed notification not necessarily seen? would only provide notification of confirmed if confirmed quickly
   private void testReceivedOutputNotificationsWithUnlockHeight(long unlockDelay) {
     assumeTrue(TEST_NOTIFICATIONS);
     long expectedUnlockHeight = daemon.getHeight() + unlockDelay;
@@ -4484,6 +4486,7 @@ public abstract class TestMoneroWalletCommon {
       
       @Override
       public void onNewBlock(long height) {
+        System.out.println("onNewBlock(" + height + ") called!!!");
         if (listener.testComplete) return;
         
         new Thread(new Runnable() {
@@ -4492,6 +4495,12 @@ public abstract class TestMoneroWalletCommon {
               
               // wait a moment for all notifications from last sync
               TimeUnit.SECONDS.sleep(3);
+              
+              // skip tests if output not received due to monero-project limitation
+              if (listener.lastNotifiedOutput == null) { // TODO (monero-project): support retrieving unconfirmed outputs
+                assertTrue(receiver instanceof MoneroWalletRpc && ((MoneroWalletRpc) receiver).getRpcConnection().getZmqUri() == null, "Must receive notification of unconfirmed output unless monero-wallet-rpc without ZMQ");
+                return;
+              }
               
               // first confirmation expected
               if (listener.confirmedHeight == null && Boolean.TRUE.equals(listener.lastNotifiedOutput.getTx().isConfirmed())) { // only run by first thread after confirmation
@@ -4529,8 +4538,12 @@ public abstract class TestMoneroWalletCommon {
     // test notification of tx in pool within 10 seconds
     final int REFRESH_RATE = receiver instanceof MoneroWalletRpc ? 20 : 10; // TODO: wallet rpc default refresh rate is 20 seconds, bump it up to 10?
     try { TimeUnit.SECONDS.sleep(REFRESH_RATE); } catch (Exception e) { throw new RuntimeException(e); }
-    assertNotNull(listener.lastNotifiedOutput);
-    if (listener.lastOnNewBlockHeight == null || listener.lastOnNewBlockHeight < submitHeight) assertFalse(listener.lastNotifiedOutput.getTx().isConfirmed());
+    if (listener.lastNotifiedOutput == null) {
+      assertTrue(receiver instanceof MoneroWalletRpc && ((MoneroWalletRpc) receiver).getRpcConnection().getZmqUri() == null, "Must receive notification of unconfirmed output unless monero-wallet-rpc without ZMQ"); // TODO (monero-project): support retrieving unconfirmed outputs
+      System.err.println("WARNING: notification of unconfirmed outputs not supported by monero-wallet-rpc without ZMQ");
+    } else {
+      if (listener.lastOnNewBlockHeight == null || listener.lastOnNewBlockHeight < submitHeight) assertFalse(listener.lastNotifiedOutput.getTx().isConfirmed());
+    }
     
     // mine until complete
     StartMining.startMining();
@@ -4573,7 +4586,11 @@ public abstract class TestMoneroWalletCommon {
     
     @Override
     public void onOutputReceived(MoneroOutputWallet output) {
-      if (output.getTx().getHash().equals(txHash)) lastNotifiedOutput = output;
+      if (output.getTx().getHash().equals(txHash)) {
+        System.out.println("onOutputReceived() !!!");
+        System.out.println(output.getTx());
+        lastNotifiedOutput = output;
+      }
     }
   }
   

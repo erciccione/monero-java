@@ -21,7 +21,7 @@ public interface MoneroWalletListenerI {
   /**
    * Invoked when a new block is added to the chain.
    * 
-   * @param height - the height of the block added to the chain
+   * @param height - the height of the new block (i.e. the number of blocks before it).
    */
   public void onNewBlock(long height);
 
