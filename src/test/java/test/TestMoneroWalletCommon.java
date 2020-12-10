@@ -4280,7 +4280,7 @@ public abstract class TestMoneroWalletCommon {
     // wait for wallet to send notifications
     if (listener.getOutputsSpent().isEmpty()) errors.add("WARNING: wallet does not notify listeners of outputs when tx sent directly through wallet or when refreshed from the pool; must wait for confirmation to receive notifications and have correct balance");
     try { StartMining.startMining(); } catch (Exception e) { }
-    while (listener.getOutputsSpent().isEmpty()) {
+    while (!hasOutput(listener.getOutputsSpent(), tx.getHash(), null, null, null)) {
       if (wallet.getTx(tx.getHash()).isFailed()) {
         try { daemon.stopMining(); } catch (Exception e) { }
         errors.add("ERROR: Tx failed in mempool: " + tx.getHash());
@@ -4289,8 +4289,11 @@ public abstract class TestMoneroWalletCommon {
       
       // stop if tx confirms without notification
       if (wallet.getTx(tx.getHash()).isConfirmed()) {
-        try { TimeUnit.SECONDS.sleep(1); } catch (Exception e) { throw new RuntimeException(e); } // allow a second to receive the notification
-        if (listener.getOutputsSpent().isEmpty()) {
+        
+        // wait a moment for the notification to be received
+        boolean isWalletRpcWithoutZmq = wallet instanceof MoneroWalletRpc && ((MoneroWalletRpc) wallet).getRpcConnection().getZmqUri() == null;
+        try { TimeUnit.SECONDS.sleep(isWalletRpcWithoutZmq ? 20 : 1); } catch (Exception e) { throw new RuntimeException(e); }  // polling listener takes up to refresh interval   // TODO: set refresh interval
+        if (!hasOutput(listener.getOutputsSpent(), tx.getHash(), null, null, null)) {
           errors.add("ERROR: tx is confirmed but no notifications were received");
           return errors;
         }
@@ -4300,12 +4303,8 @@ public abstract class TestMoneroWalletCommon {
     try { daemon.stopMining(); } catch (Exception e) { }
     
     // test output notifications
-    if (listener.getOutputsReceived().isEmpty()) {
+    if (!hasOutput(listener.getOutputsReceived(), tx.getHash(), null, null, null)) {
       errors.add("ERROR: got " + listener.getOutputsReceived().size() + " output received notifications when at least 1 was expected");
-      return errors;
-    }
-    if (listener.getOutputsSpent().isEmpty()) {
-      errors.add("ERROR: got " + listener.getOutputsSpent().size() + " output spent notifications when at least 1 was expected");
       return errors;
     }
     
@@ -4361,7 +4360,7 @@ public abstract class TestMoneroWalletCommon {
     return sb.toString();
   }
   
-  private static boolean hasOutput(List<MoneroOutputWallet> outputs, String txHash, int accountIdx, int subaddressIdx, BigInteger amount) { // TODO: use comon filter?
+  private static boolean hasOutput(List<MoneroOutputWallet> outputs, String txHash, Integer accountIdx, Integer subaddressIdx, BigInteger amount) { // TODO: use comon filter?
     MoneroOutputQuery query = new MoneroOutputQuery().setTxQuery(new MoneroTxQuery().setHash(txHash)).setAccountIndex(accountIdx).setSubaddressIndex(subaddressIdx).setAmount(amount);
     for (MoneroOutputWallet output : outputs) {
       if (query.meetsCriteria(output)) return true;
@@ -4496,7 +4495,7 @@ public abstract class TestMoneroWalletCommon {
               // wait a moment for all notifications from last sync
               TimeUnit.SECONDS.sleep(3);
               
-              // skip tests if output not received due to monero-project limitation
+              // skip tests if output not received due to monero-project not returning unconfirmed outputs
               if (listener.lastNotifiedOutput == null) { // TODO (monero-project): support retrieving unconfirmed outputs
                 assertTrue(receiver instanceof MoneroWalletRpc && ((MoneroWalletRpc) receiver).getRpcConnection().getZmqUri() == null, "Must receive notification of unconfirmed output unless monero-wallet-rpc without ZMQ");
                 return;
@@ -4586,11 +4585,7 @@ public abstract class TestMoneroWalletCommon {
     
     @Override
     public void onOutputReceived(MoneroOutputWallet output) {
-      if (output.getTx().getHash().equals(txHash)) {
-        System.out.println("onOutputReceived() !!!");
-        System.out.println(output.getTx());
-        lastNotifiedOutput = output;
-      }
+      if (output.getTx().getHash().equals(txHash)) lastNotifiedOutput = output;
     }
   }
   

@@ -2246,21 +2246,10 @@ public class MoneroWalletRpc extends MoneroWalletBase {
       // get locked txs for comparison to previous
       List<MoneroTxWallet> lockedTxs = getTxs(new MoneroTxQuery().setIsLocked(true).setIncludeOutputs(true));
       
-      // notify on new unconfirmed, confirmed, and unlocked outputs
+      // notify on new unconfirmed and confirmed txs
       for (MoneroTxWallet lockedTx : lockedTxs) {
-        
-        // notify on new unconfirmed txs
-        if (!lockedTx.isConfirmed()) {
-          // TODO (monero-project): cannot get unconfirmed outputs so skip processing here
-//          boolean unannounced = prevUnconfirmedNotifications.add(lockedTx.getHash());
-//          if (unannounced) notifyOutputs(lockedTx);
-        }
-        
-        // notify on new confirmed txs
-        else {
-          boolean unannounced = prevConfirmedNotifications.add(lockedTx.getHash());
-          if (unannounced) notifyOutputs(lockedTx);
-        }
+        boolean unannounced = lockedTx.isConfirmed() ? prevConfirmedNotifications.add(lockedTx.getHash()) : prevUnconfirmedNotifications.add(lockedTx.getHash());
+        if (unannounced) notifyOutputs(lockedTx);
       }
       
       // collect hashes of txs no longer locked
@@ -2286,23 +2275,25 @@ public class MoneroWalletRpc extends MoneroWalletBase {
     }
     
     private void notifyOutputs(MoneroTxWallet tx) {
-      System.out.println("NOTIFYING OUTPUTS");
-      System.out.println(tx);
       
-      for (MoneroWalletListenerI listener : listeners) {
-
-        // announce spent outputs
-        if (tx.getInputs() != null) {
-          for (MoneroOutput input : tx.getInputs()) {
-            listener.onOutputSpent((MoneroOutputWallet) input);  // TODO: getInputsWallet() as counterpart to getOutputsWallet()
+      // notify spent outputs
+      if (tx.getOutgoingTransfer() != null) {
+        MoneroOutputWallet output = new MoneroOutputWallet().setAmount(tx.getOutgoingTransfer().getAmount()).setTx(tx); // TODO (monero-project): monero-wallet-rpc does not allow scrape of tx spent outputs so providing one output with outgoing transfer amount linked to tx
+        for (MoneroWalletListenerI listener : listeners) listener.onOutputSpent(output);
+      }
+      
+      // notify received outputs
+      if (tx.getIncomingTransfers() != null) {
+        if (tx.getOutputs() != null && !tx.getOutputs().isEmpty()) {  // TODO (monero-project): outputs only returned for confirmed txs
+          for (MoneroOutputWallet output : tx.getOutputsWallet()) {
+            if (output.getAccountIndex() != null) { // TODO: ensure sender does not get this notification unless sent to them
+              for (MoneroWalletListenerI listener : listeners) listener.onOutputReceived(output);
+            }
           }
-        }
-        
-        // announce received outputs
-        for (MoneroOutputWallet output : tx.getOutputsWallet()) {
-          System.out.println(output);
-          if (output.getAccountIndex() != null) { // TODO: ensure sender does not get this notification unless sent to them
-            listener.onOutputReceived(output);
+        } else {
+          for (MoneroIncomingTransfer transfer : tx.getIncomingTransfers()) {
+            MoneroOutputWallet output = new MoneroOutputWallet().setAccountIndex(transfer.getAccountIndex()).setSubaddressIndex(transfer.getSubaddressIndex()).setAmount(transfer.getAmount()).setTx(tx); // TODO (monero-project): monero-wallet-rpc does not allow scrape of unconfirmed received outputs so using transfer values as outputs
+            for (MoneroWalletListenerI listener : listeners) listener.onOutputReceived(output);
           }
         }
       }
@@ -3050,7 +3041,12 @@ public class MoneroWalletRpc extends MoneroWalletBase {
       if (!skipIfAbsent) {
         txMap.put(tx.getHash(), tx);
       } else {
-        LOGGER.warning("WARNING: tx does not already exist");
+        LOGGER.warning("tx does not already exist and is being skipped during merge:\n" + tx);
+        try {
+          throw new RuntimeException("tx does not already exist and is being skipped during merge");
+        } catch (Exception e) {
+          e.printStackTrace();
+        }
       }
     }
 
