@@ -131,21 +131,23 @@ public class MoneroRpcConnection {
       if (params != null) body.put("params", params);
       //System.out.println("Sending json request with method '" + method + "' and body: " + JsonUtils.serialize(body));
 
-      // send http request and validate response
+      // send http request
       HttpPost post = new HttpPost(uri.toString() + "/json_rpc");
       HttpEntity entity = new StringEntity(JsonUtils.serialize(body));
       post.setEntity(entity);
       resp = client.execute(post);
+      
+      // validate response
       validateHttpResponse(resp);
 
       // deserialize response
       Map<String, Object> respMap = JsonUtils.toMap(MAPPER, EntityUtils.toString(resp.getEntity(), "UTF-8"));
       EntityUtils.consume(resp.getEntity());
-
-      // check RPC response for errors
       //String respStr = JsonUtils.serialize(respMap);
-      //respStr = respStr.substring(0, Math.min(1000, respStr.length()));
+      //respStr = respStr.substring(0, Math.min(10000, respStr.length()));
       //System.out.println("Received response: " + respStr);
+
+      // check rpc response for errors
       validateRpcResponse(respMap, method, params);
       return respMap;
     } catch (MoneroRpcError e1) {
@@ -187,24 +189,24 @@ public class MoneroRpcConnection {
     CloseableHttpResponse resp = null;
     try {
       
-      // build request
+      // send http request
       HttpPost post = new HttpPost(uri.toString() + "/" + path);
       if (params != null) {
         HttpEntity entity = new StringEntity(JsonUtils.serialize(params));
         post.setEntity(entity);
       }
       //System.out.println("Sending path request with path '" + path + "' and params: " + JsonUtils.serialize(params));
-      
-      // send request and validate response
       resp = client.execute(post);
+      
+      // validate response
       validateHttpResponse(resp);
       
       // deserialize response
       Map<String, Object> respMap = JsonUtils.toMap(MAPPER, EntityUtils.toString(resp.getEntity(), "UTF-8"));
       EntityUtils.consume(resp.getEntity());
-
-      // check RPC response for errors
       //System.out.println("Received response: " + respMap);
+
+      // check rpc response for errors
       validateRpcResponse(respMap, path, params);
       return respMap;
     } catch (MoneroRpcError e1) {
@@ -233,25 +235,20 @@ public class MoneroRpcConnection {
     CloseableHttpResponse resp = null;
     try {
       
-      // build request
+      // send http request
       HttpPost post = new HttpPost(uri.toString() + "/" + path);
       if (paramsBin != null) {
         HttpEntity entity = new ByteArrayEntity(paramsBin, ContentType.DEFAULT_BINARY);
         post.setEntity(entity);
       }
       LOGGER.fine("Sending binary request with path '" + path + "' and params: " + JsonUtils.serialize(params));
-      
-      // send request and validate response
       resp = client.execute(post);
+      
+      // validate response
       validateHttpResponse(resp);
       
       // deserialize response
       return EntityUtils.toByteArray(resp.getEntity());
-      
-//    // send request and store binary response as Uint8Array
-//    let resp = await this._throttledRequest(opts);
-//    if (resp.error) throw new MoneroRpcError(resp.error.code, resp.error.message, opts);
-//    return new Uint8Array(resp, 0, resp.length);
     } catch (MoneroRpcError e1) {
       throw e1;
     } catch (Exception e2) {
